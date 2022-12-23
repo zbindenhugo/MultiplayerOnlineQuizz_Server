@@ -3,6 +3,7 @@ const app = express();
 const http = require("http");
 const cors = require("cors");
 const { Server } = require("socket.io");
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 app.use(cors());
 
@@ -35,13 +36,39 @@ io.on("connection", (socket) => {
   })
 
   socket.on('joined_room', async (roomId) => {
+    socket.join(roomId);
+
+    socket.data.admin ? socket.data.admin = true : socket.data.admin = false;
+
     const sockets = await io.in(roomId).fetchSockets();
     var players = [];
     for (const socket of sockets) {
-      players.push({id: socket.id, username: socket.data.username});
+      players.push({id: socket.id, username: socket.data.username, admin: socket.data.admin});
     }
 
     io.to(roomId).emit('receive_all_players', players);
+  })
+
+  socket.on('is_admin', () => {
+    socket.emit('is_admin_answered', socket.data.admin)
+  })
+
+  socket.on('get_all_categories', async () => {
+
+    if(socket.data.admin){
+      const categories = await fetch('https://the-trivia-api.com/api/categories');
+      const result = await categories.json();
+    
+      socket.emit('receive_all_categories', result);
+    }
+    
+  })
+
+  socket.on('begin_game', async (data) => {
+    const questions = await fetch(`https://the-trivia-api.com/api/questions?${data.difficulty ? 'difficulty=' + data.difficulty.toLowerCase() + '&' : ''}${data.categorie ? 'categories=' + data.categorie + '&' : ''}${data.nbQuestions !== 10 ? 'limit=' + data.nbQuestions : 'limit=10'}`)
+    const questionJson = await questions.json();
+
+    console.log(questionJson);
   })
 
   socket.on("disconnect", () => {
